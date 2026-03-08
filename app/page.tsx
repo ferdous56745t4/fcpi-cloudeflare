@@ -2,16 +2,94 @@
 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+
+// ─── Facebook Event Helper ───────────────────────────────────────────────────
+// Reads _fbc and _fbp cookies automatically
+function getCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(new RegExp("(^| )" + name + "=([^;]+)"));
+  return match ? match[2] : null;
+}
+
+// Sends event to your Next.js API route → Cloudflare Worker → Facebook CAPI
+async function sendServerEvent(
+  eventName: string,
+  customData: Record<string, any> = {},
+  userData: Record<string, any> = {}
+) {
+  try {
+    await fetch("/api/track", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        eventName,
+        eventSourceUrl: window.location.href,
+        userData: {
+          fbc: getCookie("_fbc"),
+          fbp: getCookie("_fbp"),
+          ...userData,
+        },
+        customData,
+      }),
+    });
+  } catch (err) {
+    console.error("FB CAPI error:", err);
+  }
+}
+
+// Also fires browser-side pixel event (for deduplication with server event)
+function firePixelEvent(eventName: string, data: Record<string, any> = {}) {
+  if (typeof window !== "undefined" && (window as any).fbq) {
+    (window as any).fbq("track", eventName, data);
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function Home() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  // ✅ ViewContent — fires when page loads
+  useEffect(() => {
+    const eventData = { content_name: "AuraSync Pro", content_type: "product", value: 99, currency: "USD" };
+
+    // Browser pixel
+    firePixelEvent("ViewContent", eventData);
+
+    // Server CAPI
+    sendServerEvent("ViewContent", eventData);
+  }, []);
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setLoading(true);
-    // Simulate API call
+
+    const form = e.currentTarget;
+    const phone = (form.elements.namedItem("phone") as HTMLInputElement)?.value || "";
+    const name = (form.elements.namedItem("name") as HTMLInputElement)?.value || "";
+
+    const customData = {
+      value: 99,
+      currency: "USD",
+      content_name: "AuraSync Pro",
+      content_type: "product",
+    };
+
+    const userData = {
+      phone: phone,      // will be SHA256 hashed in lib/fbcapi.js
+      fn: name.split(" ")[0] || "",
+      ln: name.split(" ")[1] || "",
+    };
+
+    // ✅ Lead event — fires on form submit
+    firePixelEvent("Lead", customData);
+    await sendServerEvent("Lead", customData, userData);
+
+    // ✅ InitiateCheckout event
+    firePixelEvent("InitiateCheckout", customData);
+    await sendServerEvent("InitiateCheckout", customData, userData);
+
     setTimeout(() => {
       router.push("/thank-you");
     }, 800);
@@ -78,12 +156,10 @@ export default function Home() {
               
               <div className="hidden lg:block lg:col-span-6 relative mt-16 lg:mt-0">
                 <div className="absolute inset-0 bg-gradient-to-tr from-indigo-100 to-purple-50 rounded-full blur-3xl opacity-60 transform translate-x-10 translate-y-10"></div>
-                {/* Decorative Elements */}
                 <div className="relative w-full aspect-square max-w-lg mx-auto">
                     <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 to-purple-500/10 rounded-2xl transform rotate-3 scale-105 border border-white/50 backdrop-blur-sm"></div>
                     <div className="absolute inset-0 bg-white rounded-2xl shadow-2xl overflow-hidden flex items-center justify-center p-8">
                        <div className="w-full h-full border border-gray-100 rounded-xl bg-gray-50 flex items-center justify-center relative overflow-hidden group">
-                          {/* Minimalist product representation */}
                           <div className="w-48 h-64 bg-white rounded-xl shadow-sm border border-gray-100 absolute z-10 transform group-hover:scale-105 transition-transform duration-500 group-hover:-rotate-2">
                              <div className="w-full h-12 border-b border-gray-50 bg-gray-50/50 rounded-t-xl flex items-center px-4 gap-2">
                                 <div className="w-2.5 h-2.5 rounded-full bg-red-400"></div>
@@ -96,7 +172,6 @@ export default function Home() {
                                 <div className="w-5/6 h-4 bg-gray-100 rounded-md"></div>
                              </div>
                           </div>
-                          
                           <div className="w-56 h-40 bg-indigo-600 rounded-xl shadow-lg absolute -right-8 -bottom-8 z-20 transform group-hover:scale-105 transition-transform duration-500 group-hover:rotate-3 flex flex-col justify-between p-4 mix-blend-multiply">
                               <div className="flex justify-between items-center">
                                  <div className="w-8 h-6 bg-white/20 rounded-md"></div>
@@ -123,7 +198,6 @@ export default function Home() {
                  <h2 className="text-3xl font-bold text-gray-900 mb-4">Crafted for perfection</h2>
                  <p className="text-lg text-gray-600">Every detail has been meticulously designed to provide you with the smoothest experience possible.</p>
               </div>
-              
               <div className="grid md:grid-cols-3 gap-8">
                  {[
                     { title: "Lightning Fast", desc: "Optimized for speed. Get your work done in record time without any lag.", icon: "zap" },
