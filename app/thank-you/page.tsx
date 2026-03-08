@@ -1,7 +1,67 @@
+"use client";
+
 import Link from "next/link";
-import { CheckCircleIcon } from "@heroicons/react/24/solid";
+import { useEffect } from "react";
+
+// ─── Facebook Event Helpers ───────────────────────────────────────────────────
+function getCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(new RegExp("(^| )" + name + "=([^;]+)"));
+  return match ? match[2] : null;
+}
+
+async function sendServerEvent(
+  eventName: string,
+  customData: Record<string, any> = {},
+  userData: Record<string, any> = {}
+) {
+  try {
+    await fetch("/api/track", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        eventName,
+        eventSourceUrl: window.location.href,
+        userData: {
+          fbc: getCookie("_fbc"),
+          fbp: getCookie("_fbp"),
+          ...userData,
+        },
+        customData,
+      }),
+    });
+  } catch (err) {
+    console.error("FB CAPI error:", err);
+  }
+}
+
+function firePixelEvent(eventName: string, data: Record<string, any> = {}) {
+  if (typeof window !== "undefined" && (window as any).fbq) {
+    (window as any).fbq("track", eventName, data);
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function ThankYouPage() {
+
+  // ✅ Purchase event — fires once when Thank You page loads
+  useEffect(() => {
+    const purchaseData = {
+      value: 99.00,
+      currency: "USD",
+      content_name: "AuraSync Pro",
+      content_type: "product",
+      content_ids: ["aurasync-pro"],
+      num_items: 1,
+    };
+
+    // Browser pixel
+    firePixelEvent("Purchase", purchaseData);
+
+    // Server CAPI (more reliable, bypasses ad blockers)
+    sendServerEvent("Purchase", purchaseData);
+  }, []); // empty array = runs only once on page load
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col justify-center items-center py-12 px-4 sm:px-6 lg:px-8 font-sans selection:bg-indigo-100 selection:text-indigo-900">
       <div className="max-w-md w-full bg-white rounded-3xl shadow-xl overflow-hidden border border-gray-100 p-8 sm:p-10 text-center relative">
